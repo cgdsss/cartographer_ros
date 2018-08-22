@@ -56,13 +56,14 @@ void Run() {
       cartographer::common::make_unique<cartographer::mapping::MapBuilder>(
           node_options.map_builder_options);
   Node node(node_options, std::move(map_builder), &tf_buffer);
+  node.saveTrajectoryOptions(trajectory_options);
   if (!FLAGS_load_state_filename.empty()) {
     node.LoadState(FLAGS_load_state_filename, FLAGS_load_frozen_state);
   }
 
-  if (FLAGS_start_trajectory_with_default_topics) {
-    node.StartTrajectoryWithDefaultTopics(trajectory_options);
-  }
+//  if (FLAGS_start_trajectory_with_default_topics) {
+//    node.StartTrajectoryWithDefaultTopics(trajectory_options);
+//  }
 
   ::ros::spin();
 
@@ -80,6 +81,7 @@ void Run() {
 int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+//  google::SetCommandLineOption("GLOG_minloglevel", "2");
 
   CHECK(!FLAGS_configuration_directory.empty())
       << "-configuration_directory is missing.";

@@ -49,11 +49,14 @@
 #include "sensor_msgs/NavSatFix.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
+#include "we_console/peek_cmd.h"
+#include "we_console/WEConsole.h"
 
 namespace cartographer_ros {
 
 // Wires up ROS topics to SLAM.
-class Node {
+class Node : public WEConsole{
  public:
   Node(const NodeOptions& node_options,
        std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
@@ -62,6 +65,12 @@ class Node {
 
   Node(const Node&) = delete;
   Node& operator=(const Node&) = delete;
+
+  // we
+  void cmdReceived(const char * cmd);
+  void saveTrajectoryOptions(TrajectoryOptions ops){
+      last_trajectory_options_ = ops;
+  }
 
   // Finishes all yet active trajectories.
   void FinishAllTrajectories();
@@ -166,6 +175,8 @@ class Node {
   const NodeOptions node_options_;
 
   tf2_ros::TransformBroadcaster tf_broadcaster_;
+  tf2_ros::Buffer* tfBuffer_;
+  tf2_ros::TransformListener* tf_listener_;
 
   cartographer::common::Mutex mutex_;
   MapBuilderBridge map_builder_bridge_ GUARDED_BY(mutex_);
@@ -175,6 +186,7 @@ class Node {
   ::ros::Publisher trajectory_node_list_publisher_;
   ::ros::Publisher landmark_poses_list_publisher_;
   ::ros::Publisher constraint_list_publisher_;
+  ::ros::ServiceClient finish_trajiectry_client_;
   // These ros::ServiceServers need to live for the lifetime of the node.
   std::vector<::ros::ServiceServer> service_servers_;
   ::ros::Publisher scan_matched_point_cloud_publisher_;
@@ -208,6 +220,7 @@ class Node {
   // We have to keep the timer handles of ::ros::WallTimers around, otherwise
   // they do not fire.
   std::vector<::ros::WallTimer> wall_timers_;
+  TrajectoryOptions last_trajectory_options_;
 };
 
 }  // namespace cartographer_ros

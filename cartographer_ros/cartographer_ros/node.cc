@@ -42,6 +42,7 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "tf2_eigen/tf2_eigen.h"
 #include "visualization_msgs/MarkerArray.h"
+#include "geometry_msgs/TransformStamped.h"
 
 namespace cartographer_ros {
 
@@ -86,8 +87,9 @@ Node::Node(
     const NodeOptions& node_options,
     std::unique_ptr<cartographer::mapping::MapBuilderInterface> map_builder,
     tf2_ros::Buffer* const tf_buffer)
-    : node_options_(node_options),
-      map_builder_bridge_(node_options_, std::move(map_builder), tf_buffer) {
+    : WEConsole("carto", boost::bind(&Node::cmdReceived, this, _1)),
+      node_options_(node_options),
+      map_builder_bridge_(node_options_, std::move(map_builder), tf_buffer){
   carto::common::MutexLocker lock(&mutex_);
   submap_list_publisher_ =
       node_handle_.advertise<::cartographer_ros_msgs::SubmapList>(
@@ -129,9 +131,17 @@ Node::Node(
   wall_timers_.push_back(node_handle_.createWallTimer(
       ::ros::WallDuration(kConstraintPublishPeriodSec),
       &Node::PublishConstraintList, this));
+  finish_trajiectry_client_ =
+          node_handle_.serviceClient<cartographer_ros_msgs::FinishTrajectory>(
+              kFinishTrajectoryServiceName);
+  tfBuffer_ = new tf2_ros::Buffer();
+  tf_listener_ = new tf2_ros::TransformListener(*tfBuffer_);
 }
 
-Node::~Node() { FinishAllTrajectories(); }
+Node::~Node() { FinishAllTrajectories();
+              delete tf_listener_;
+              delete tfBuffer_;
+              tf_listener_ = NULL;}
 
 ::ros::NodeHandle* Node::node_handle() { return &node_handle_; }
 
@@ -141,6 +151,84 @@ bool Node::HandleSubmapQuery(
   carto::common::MutexLocker lock(&mutex_);
   map_builder_bridge_.HandleSubmapQuery(request, response);
   return true;
+}
+void Node::cmdReceived(const char *cmd){
+    float f1, f2, f3, f4, f5, f6, f7, f8, f9, f10;
+    int d1, d2;
+    char str1[50] = "";
+    char str2[50] = "";
+    char str3[50] = "";
+    char str4[50] = "";
+    char str5[50] = "";
+    if (PEEK_CMD_D(cmd, "finish", 6, d1))
+    {
+        cartographer_ros_msgs::FinishTrajectory f_srv;
+        if (d1 < 0)
+        {
+            for (const auto& trajectory : map_builder_bridge_.GetTrajectoryStates())
+            {
+                int id = trajectory.first;
+                f_srv.request.trajectory_id = id;
+                finish_trajiectry_client_.call(f_srv);
+                ROS_INFO("finish trajectory %d", id);
+            }
+        }
+        else
+        {
+            carto::common::MutexLocker lock(&mutex_);
+            FinishTrajectoryUnderLock(d1);
+            ROS_INFO("finish trajectory %d", d1);
+        }
+    }
+    else if(PEEK_CMD_FF(cmd, "initpose", 8, f1, f2))
+    {
+        Eigen::Matrix<double, 3, 1> position(f1, f2, 0);
+        Eigen::Quaternion<double> rotation(1, 0, 0, 0);
+        ::cartographer::mapping::proto::InitialTrajectoryPose pose;
+        pose.set_to_trajectory_id(0);
+        *pose.mutable_relative_pose() =
+            cartographer::transform::ToProto(cartographer::transform::Rigid3d(position, rotation));
+        pose.set_timestamp(cartographer::common::ToUniversal(FromRos(ros::Time::now())));
+
+        *last_trajectory_options_.trajectory_builder_options.mutable_initial_trajectory_pose() = pose;
+        StartTrajectoryWithDefaultTopics(last_trajectory_options_);
+        ROS_INFO("start initpose trajectory");
+    }
+    else if(PEEK_CMD(cmd, "startDefault"))
+    {
+        StartTrajectoryWithDefaultTopics(last_trajectory_options_);
+        ROS_INFO("start default trajectory");
+    }
+    else if(PEEK_CMD(cmd, "list"))
+    {
+        for (const auto& trajectory : map_builder_bridge_.GetTrajectoryStates())
+        {
+            std::cout << trajectory.first;
+        }
+        std::cout << std::endl;
+    }
+    else if(PEEK_CMD(cmd, "pose"))
+    {
+        geometry_msgs::TransformStamped transformStamped;
+        try{
+          transformStamped = tfBuffer_->lookupTransform(node_options_.map_frame,
+                                                        last_trajectory_options_.published_frame,
+                                                        ros::Time(0));
+          Eigen::Quaternion<double> rotation(transformStamped.transform.rotation.w,
+                                             transformStamped.transform.rotation.x,
+                                             transformStamped.transform.rotation.y,
+                                             transformStamped.transform.rotation.z);
+          Eigen::Vector3d euler = rotation.toRotationMatrix().eulerAngles(2, 1, 0);
+          std::cout << "robot_pose: [" << transformStamped.transform.translation.x
+                    << ", " << transformStamped.transform.translation.y << ", "
+                    << euler[0] << "]\n";
+
+        }
+        catch (tf2::TransformException &ex) {
+          ROS_WARN("%s",ex.what());
+        }
+    }
+    cmd = "";
 }
 
 void Node::PublishSubmapList(const ::ros::WallTimerEvent& unused_timer_event) {
