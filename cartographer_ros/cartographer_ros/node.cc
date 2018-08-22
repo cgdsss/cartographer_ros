@@ -201,9 +201,15 @@ void Node::cmdReceived(const char *cmd){
     }
     else if(PEEK_CMD(cmd, "list"))
     {
+        std::cout << "GetTrajectoryStates" << std::endl;
         for (const auto& trajectory : map_builder_bridge_.GetTrajectoryStates())
         {
-            std::cout << trajectory.first;
+            std::cout << trajectory.first << std::endl;
+        }
+        std::cout << "GetFrozenTrajectoryIds" << std::endl;
+        for (const auto& trajectory : map_builder_bridge_.GetFrozenTrajectoryIds())
+        {
+            std::cout << trajectory << std::endl;
         }
         std::cout << std::endl;
     }
@@ -227,6 +233,13 @@ void Node::cmdReceived(const char *cmd){
         catch (tf2::TransformException &ex) {
           ROS_WARN("%s",ex.what());
         }
+    }
+    else if(PEEK_CMD_S(cmd, "loadmap", 7, str1))
+    {
+        //loadmap /home/cgd/Documents/hospital_record/map/1.pbstream
+//        carto::common::MutexLocker lock(&mutex_);
+        LoadState(str1, true);
+        ROS_INFO("load: %s", str1);
     }
     cmd = "";
 }
